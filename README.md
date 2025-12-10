@@ -35,28 +35,13 @@ This repository is for the artifact evaluation of the paper "Counterexample Clas
 - select a script and run it in Matlab commandline.
 
 ## Structure of the repository
+
+```
 ├── Install.sh
 ├── LICENSE
 ├── README.md
 ├── breach
-│   ├── @STL_Formula
-│   ├── CHANGELOG.md
-│   ├── Contents.m
-│   ├── Core
-│   ├── Doc
-│   ├── Examples
-│   ├── Ext
-│   ├── InitBreach.m
-│   ├── InstallBreach.m
-│   ├── LICENSE
-│   ├── Online
-│   ├── Params
-│   ├── Plots
-│   ├── README.md
-│   └── VERSION
 ├── model
-│   ├── Autotrans_shift.mdl
-│   └── sldemo_autotrans_data.mat
 ├── src
 │   ├── MyClassProblem.m
 │   ├── MyClassProblemAlwMid.m
@@ -76,4 +61,5 @@ This repository is for the artifact evaluation of the paper "Counterexample Clas
     ├── data
     ├── experiment
     └── store_data.m
+```
   
