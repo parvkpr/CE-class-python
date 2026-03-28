@@ -3,11 +3,11 @@
 Publication-style figures from CEClass paper experiment CSV.
 
 Outputs (default directory: paper_figures/):
-  1. time_comparison.png       — Per-benchmark subplots: NoPrune vs AlwMid time (Fig. 4 style)
-  2. speedup_vs_k.png          — Speedup ratio (NoPrune / AlwMid) vs k
-  3. synth_calls_comparison.png — Synthesis calls saved: all benchmarks
-  4. coverage_comparison.png   — Coverage fraction: NoPrune vs AlwMid side-by-side
-  5. summary_table.png         — Comprehensive table with both strategies
+  1. time_comparison.png       — Per-benchmark subplots: 3 strategies
+  2. speedup_vs_k.png          — Speedup ratio (NoPrune / strategy) vs k
+  3. synth_calls_comparison.png — Synthesis calls: all benchmarks, 3 strategies
+  4. coverage_comparison.png   — Coverage fraction: 3 strategies side-by-side
+  5. summary_table.png         — Comprehensive table with all strategies
 
 Usage:
   python plot_paper_results.py
@@ -37,10 +37,17 @@ BENCH_LABELS = {
 }
 K_ORDER = [1, 2, 3, 4]
 
-NP_COLOR = "#2E7D32"
-AM_COLOR = "#1565C0"
-NP_LABEL = "NoPrune (Baseline)"
-AM_LABEL = "AlwMid (Binary Search)"
+STRATEGIES = ["no_prune", "alw_mid", "long_bs"]
+STRAT_LABELS = {
+    "no_prune": "NoPrune (Baseline)",
+    "alw_mid":  "AlwMid",
+    "long_bs":  "LongBS (Proposed)",
+}
+STRAT_COLORS = {
+    "no_prune": "#2E7D32",
+    "alw_mid":  "#1565C0",
+    "long_bs":  "#D84315",
+}
 
 
 def load_rows(path: Path) -> list[dict]:
@@ -65,34 +72,29 @@ def get_int(rows: list[dict], bench: str, k: int, strategy: str, key: str) -> in
     return None
 
 
-# ── Figure 1: Per-benchmark time comparison (paper Fig. 4 style) ─────────
+# ── Figure 1: Per-benchmark time comparison ──────────────────────────────
 
 def plot_time_comparison(rows: list[dict], out: Path) -> None:
-    fig, axes = plt.subplots(1, 6, figsize=(21, 4), dpi=150, sharey=False)
+    n_strat = len(STRATEGIES)
+    fig, axes = plt.subplots(1, 6, figsize=(24, 4.5), dpi=150, sharey=False)
 
     x = np.arange(len(K_ORDER))
-    w = 0.35
+    w = 0.25
 
     for ax, bench in zip(axes, BENCH_ORDER):
-        np_times = []
-        am_times = []
-        for k in K_ORDER:
-            np_t = get_val(rows, bench, k, "no_prune", "time_class")
-            am_t = get_val(rows, bench, k, "alw_mid", "time_class")
-            np_times.append(np_t if np_t is not None else 0)
-            am_times.append(am_t if am_t is not None else 0)
-
-        bars_np = ax.bar(x - w / 2, np_times, w, label=NP_LABEL, color=NP_COLOR, alpha=0.85)
-        bars_am = ax.bar(x + w / 2, am_times, w, label=AM_LABEL, color=AM_COLOR, alpha=0.85)
-
-        for bar, val in zip(bars_np, np_times):
-            if val > 0:
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        f"{val:.1f}", ha="center", va="bottom", fontsize=6.5, color=NP_COLOR)
-        for bar, val in zip(bars_am, am_times):
-            if val > 0:
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        f"{val:.1f}", ha="center", va="bottom", fontsize=6.5, color=AM_COLOR)
+        for si, strat in enumerate(STRATEGIES):
+            vals = []
+            for k in K_ORDER:
+                v = get_val(rows, bench, k, strat, "time_class")
+                vals.append(v if v is not None else 0)
+            offset = (si - (n_strat - 1) / 2) * w
+            bars = ax.bar(x + offset, vals, w,
+                          label=STRAT_LABELS[strat], color=STRAT_COLORS[strat], alpha=0.85)
+            for bar, val in zip(bars, vals):
+                if val > 0:
+                    ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                            f"{val:.1f}", ha="center", va="bottom", fontsize=5.5,
+                            color=STRAT_COLORS[strat])
 
         ax.set_xticks(x)
         ax.set_xticklabels([str(k) for k in K_ORDER])
@@ -105,9 +107,9 @@ def plot_time_comparison(rows: list[dict], out: Path) -> None:
 
     axes[0].set_ylabel("Classification time (s, log scale)", fontsize=11)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2, fontsize=10,
+    fig.legend(handles, labels, loc="upper center", ncol=n_strat, fontsize=10,
                bbox_to_anchor=(0.5, 1.08), frameon=True, edgecolor="gray")
-    fig.suptitle("Classification Time: NoPrune (Baseline) vs AlwMid (Binary Search)",
+    fig.suptitle("Classification Time Comparison Across Strategies",
                  fontsize=14, fontweight="bold", y=1.14)
     fig.tight_layout()
     fig.savefig(out, bbox_inches="tight")
@@ -118,59 +120,70 @@ def plot_time_comparison(rows: list[dict], out: Path) -> None:
 # ── Figure 2: Speedup ratio vs k ─────────────────────────────────────────
 
 def plot_speedup_vs_k(rows: list[dict], out: Path) -> None:
-    fig, ax = plt.subplots(figsize=(7.5, 4.5), dpi=150)
-    cmap = plt.cm.Set1(np.linspace(0, 0.6, len(BENCH_ORDER)))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5), dpi=150)
+    cmap = plt.cm.Set1(np.linspace(0, 0.8, len(BENCH_ORDER)))
     markers = ["o", "s", "D", "^", "v", "P"]
 
-    for i, bench in enumerate(BENCH_ORDER):
-        ks_plot, speedups = [], []
-        for k in K_ORDER:
-            np_t = get_val(rows, bench, k, "no_prune", "time_class")
-            am_t = get_val(rows, bench, k, "alw_mid", "time_class")
-            if np_t is not None and am_t is not None and am_t > 0:
-                ks_plot.append(k)
-                speedups.append(np_t / am_t)
-        if ks_plot:
-            ax.plot(ks_plot, speedups, f"{markers[i]}-", linewidth=2.2, markersize=8,
-                    label=f"{bench} ({BENCH_LABELS[bench]})", color=cmap[i])
+    for ax, strat, title in zip(axes,
+                                 ["alw_mid", "long_bs"],
+                                 ["AlwMid Speedup", "LongBS (Proposed) Speedup"]):
+        for i, bench in enumerate(BENCH_ORDER):
+            ks_plot, speedups = [], []
+            for k in K_ORDER:
+                np_t = get_val(rows, bench, k, "no_prune", "time_class")
+                s_t = get_val(rows, bench, k, strat, "time_class")
+                if np_t is not None and s_t is not None and s_t > 0:
+                    ks_plot.append(k)
+                    speedups.append(np_t / s_t)
+            if ks_plot:
+                ax.plot(ks_plot, speedups, f"{markers[i]}-", linewidth=2.2, markersize=8,
+                        label=f"{bench} ({BENCH_LABELS[bench]})", color=cmap[i])
 
-    ax.axhline(y=1, color="gray", linestyle=":", alpha=0.5, linewidth=1)
-    ax.set_xlabel("Hierarchy depth $k$", fontsize=12)
-    ax.set_ylabel("Speedup (NoPrune time / AlwMid time)", fontsize=12)
-    ax.set_title("Speedup from Binary Search Strategy vs Hierarchy Depth",
-                 fontsize=13, fontweight="bold")
-    ax.set_xticks(K_ORDER)
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+        ax.axhline(y=1, color="gray", linestyle=":", alpha=0.5, linewidth=1)
+        ax.set_xlabel("Hierarchy depth $k$", fontsize=12)
+        ax.set_ylabel("Speedup (NoPrune time / strategy time)", fontsize=11)
+        ax.set_title(title, fontsize=13, fontweight="bold")
+        ax.set_xticks(K_ORDER)
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
+
+    fig.suptitle("Speedup vs Hierarchy Depth", fontsize=14, fontweight="bold", y=1.02)
     fig.tight_layout()
     fig.savefig(out, bbox_inches="tight")
     plt.close(fig)
     print(f"Wrote {out}")
 
 
-# ── Figure 3: Synthesis calls comparison (all benchmarks) ─────────────────
+# ── Figure 3: Synthesis calls comparison ──────────────────────────────────
 
 def plot_synth_calls(rows: list[dict], out: Path) -> None:
-    fig, axes = plt.subplots(1, 6, figsize=(21, 4), dpi=150, sharey=False)
+    n_strat = len(STRATEGIES)
+    fig, axes = plt.subplots(1, 6, figsize=(24, 4.5), dpi=150, sharey=False)
 
     x = np.arange(len(K_ORDER))
-    w = 0.35
+    w = 0.25
 
     for ax, bench in zip(axes, BENCH_ORDER):
-        np_synth = [get_int(rows, bench, k, "no_prune", "num_synth") or 0 for k in K_ORDER]
-        am_synth = [get_int(rows, bench, k, "alw_mid", "num_synth") or 0 for k in K_ORDER]
+        synth_vals = {}
+        for strat in STRATEGIES:
+            synth_vals[strat] = [get_int(rows, bench, k, strat, "num_synth") or 0
+                                 for k in K_ORDER]
 
-        ax.bar(x - w / 2, np_synth, w, label=NP_LABEL, color=NP_COLOR, alpha=0.85)
-        ax.bar(x + w / 2, am_synth, w, label=AM_LABEL, color=AM_COLOR, alpha=0.85)
+        for si, strat in enumerate(STRATEGIES):
+            offset = (si - (n_strat - 1) / 2) * w
+            ax.bar(x + offset, synth_vals[strat], w,
+                   label=STRAT_LABELS[strat], color=STRAT_COLORS[strat], alpha=0.85)
 
         for j, k in enumerate(K_ORDER):
-            total = np_synth[j]
-            saved = np_synth[j] - am_synth[j]
-            if total > 0 and saved > 0:
-                pct = 100 * saved / total
-                ax.text(x[j], max(np_synth[j], am_synth[j]) * 1.02,
-                        f"−{pct:.0f}%", ha="center", va="bottom",
-                        fontsize=7, color="#B71C1C", fontweight="bold")
+            np_val = synth_vals["no_prune"][j]
+            lb_val = synth_vals["long_bs"][j]
+            if np_val > 0 and lb_val < np_val:
+                pct = 100 * (np_val - lb_val) / np_val
+                ax.text(x[j], max(synth_vals["no_prune"][j],
+                                  synth_vals["alw_mid"][j],
+                                  synth_vals["long_bs"][j]) * 1.02,
+                        f"\u2212{pct:.0f}%", ha="center", va="bottom",
+                        fontsize=6.5, color="#B71C1C", fontweight="bold")
 
         ax.set_xticks(x)
         ax.set_xticklabels([str(k) for k in K_ORDER])
@@ -180,9 +193,9 @@ def plot_synth_calls(rows: list[dict], out: Path) -> None:
 
     axes[0].set_ylabel("Synthesis calls (membership queries)", fontsize=11)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2, fontsize=10,
+    fig.legend(handles, labels, loc="upper center", ncol=n_strat, fontsize=10,
                bbox_to_anchor=(0.5, 1.08), frameon=True, edgecolor="gray")
-    fig.suptitle("Membership Queries: NoPrune Checks Every Node vs AlwMid Prunes via Partial Order",
+    fig.suptitle("Membership Queries: LongBS (Proposed) Saves the Most via Binary Search on Longest Path",
                  fontsize=13, fontweight="bold", y=1.14)
     fig.tight_layout()
     fig.savefig(out, bbox_inches="tight")
@@ -193,23 +206,22 @@ def plot_synth_calls(rows: list[dict], out: Path) -> None:
 # ── Figure 4: Coverage comparison ─────────────────────────────────────────
 
 def plot_coverage_comparison(rows: list[dict], out: Path) -> None:
-    fig, axes = plt.subplots(1, 6, figsize=(21, 3.8), dpi=150, sharey=True)
+    n_strat = len(STRATEGIES)
+    fig, axes = plt.subplots(1, 6, figsize=(24, 4), dpi=150, sharey=True)
 
     x = np.arange(len(K_ORDER))
-    w = 0.35
+    w = 0.25
 
     for ax, bench in zip(axes, BENCH_ORDER):
-        np_cov, am_cov = [], []
-        for k in K_ORDER:
-            nc_np = get_int(rows, bench, k, "no_prune", "num_covered")
-            cl_np = get_int(rows, bench, k, "no_prune", "num_classes")
-            nc_am = get_int(rows, bench, k, "alw_mid", "num_covered")
-            cl_am = get_int(rows, bench, k, "alw_mid", "num_classes")
-            np_cov.append(nc_np / cl_np if nc_np and cl_np else 0)
-            am_cov.append(nc_am / cl_am if nc_am and cl_am else 0)
-
-        ax.bar(x - w / 2, np_cov, w, label=NP_LABEL, color=NP_COLOR, alpha=0.85)
-        ax.bar(x + w / 2, am_cov, w, label=AM_LABEL, color=AM_COLOR, alpha=0.85)
+        for si, strat in enumerate(STRATEGIES):
+            covs = []
+            for k in K_ORDER:
+                nc = get_int(rows, bench, k, strat, "num_covered")
+                cl = get_int(rows, bench, k, strat, "num_classes")
+                covs.append(nc / cl if nc and cl else 0)
+            offset = (si - (n_strat - 1) / 2) * w
+            ax.bar(x + offset, covs, w,
+                   label=STRAT_LABELS[strat], color=STRAT_COLORS[strat], alpha=0.85)
 
         ax.set_xticks(x)
         ax.set_xticklabels([str(k) for k in K_ORDER])
@@ -220,9 +232,9 @@ def plot_coverage_comparison(rows: list[dict], out: Path) -> None:
 
     axes[0].set_ylabel("Coverage (covered / classes)", fontsize=11)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2, fontsize=10,
+    fig.legend(handles, labels, loc="upper center", ncol=n_strat, fontsize=10,
                bbox_to_anchor=(0.5, 1.08), frameon=True, edgecolor="gray")
-    fig.suptitle("Coverage Is Preserved: AlwMid Achieves Same Coverage as NoPrune",
+    fig.suptitle("Coverage Is Preserved: All Strategies Achieve the Same Coverage",
                  fontsize=13, fontweight="bold", y=1.14)
     fig.tight_layout()
     fig.savefig(out, bbox_inches="tight")
@@ -234,9 +246,11 @@ def plot_coverage_comparison(rows: list[dict], out: Path) -> None:
 
 def plot_summary_table(rows: list[dict], out: Path) -> None:
     header = ["Bench", "$k$", "Classes",
-              "Covered\n(NP)", "Covered\n(AM)",
-              "Time NP\n(s)", "Time AM\n(s)", "Speedup",
-              "Synth\nNP", "Synth\nAM", "Synth\nSaved"]
+              "Cov\nNP", "Cov\nAM", "Cov\nLB",
+              "Time NP\n(s)", "Time AM\n(s)", "Time LB\n(s)",
+              "Spdup\nAM", "Spdup\nLB",
+              "Synth\nNP", "Synth\nAM", "Synth\nLB",
+              "Synth\nSaved"]
     cells = []
     cell_colors = []
 
@@ -245,23 +259,31 @@ def plot_summary_table(rows: list[dict], out: Path) -> None:
             cl = get_int(rows, bench, k, "no_prune", "num_classes")
             nc_np = get_int(rows, bench, k, "no_prune", "num_covered")
             nc_am = get_int(rows, bench, k, "alw_mid", "num_covered")
+            nc_lb = get_int(rows, bench, k, "long_bs", "num_covered")
             t_np = get_val(rows, bench, k, "no_prune", "time_class")
             t_am = get_val(rows, bench, k, "alw_mid", "time_class")
+            t_lb = get_val(rows, bench, k, "long_bs", "time_class")
             s_np = get_int(rows, bench, k, "no_prune", "num_synth")
             s_am = get_int(rows, bench, k, "alw_mid", "num_synth")
+            s_lb = get_int(rows, bench, k, "long_bs", "num_synth")
 
-            speedup = t_np / t_am if t_np and t_am and t_am > 0 else 0
-            synth_saved = f"{100 * (1 - s_am / s_np):.0f}%" if s_np and s_am else "—"
+            sp_am = t_np / t_am if t_np and t_am and t_am > 0 else 0
+            sp_lb = t_np / t_lb if t_np and t_lb and t_lb > 0 else 0
+            synth_saved = f"{100 * (1 - s_lb / s_np):.0f}%" if s_np and s_lb else "\u2014"
 
             row = [
-                bench, str(k), str(cl or "—"),
-                f"{nc_np}/{cl}" if nc_np is not None else "—",
-                f"{nc_am}/{cl}" if nc_am is not None else "—",
-                f"{t_np:.2f}" if t_np is not None else "—",
-                f"{t_am:.2f}" if t_am is not None else "—",
-                f"{speedup:.1f}×" if speedup > 0 else "—",
-                str(s_np) if s_np is not None else "—",
-                str(s_am) if s_am is not None else "—",
+                bench, str(k), str(cl or "\u2014"),
+                f"{nc_np}/{cl}" if nc_np is not None else "\u2014",
+                f"{nc_am}/{cl}" if nc_am is not None else "\u2014",
+                f"{nc_lb}/{cl}" if nc_lb is not None else "\u2014",
+                f"{t_np:.2f}" if t_np is not None else "\u2014",
+                f"{t_am:.2f}" if t_am is not None else "\u2014",
+                f"{t_lb:.2f}" if t_lb is not None else "\u2014",
+                f"{sp_am:.1f}\u00d7" if sp_am > 0 else "\u2014",
+                f"{sp_lb:.1f}\u00d7" if sp_lb > 0 else "\u2014",
+                str(s_np) if s_np is not None else "\u2014",
+                str(s_am) if s_am is not None else "\u2014",
+                str(s_lb) if s_lb is not None else "\u2014",
                 synth_saved,
             ]
             cells.append(row)
@@ -271,7 +293,7 @@ def plot_summary_table(rows: list[dict], out: Path) -> None:
 
     nrows = len(cells)
     fig_h = 1.5 + nrows * 0.38
-    fig, ax = plt.subplots(figsize=(14, fig_h), dpi=150)
+    fig, ax = plt.subplots(figsize=(18, fig_h), dpi=150)
     ax.axis("off")
 
     table = ax.table(
@@ -282,17 +304,17 @@ def plot_summary_table(rows: list[dict], out: Path) -> None:
         cellLoc="center",
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(8.5)
+    table.set_fontsize(7.5)
     table.scale(1.0, 1.55)
 
     for (row, col), cell in table.get_celld().items():
         if row == 0:
-            cell.set_text_props(fontweight="bold", fontsize=8)
+            cell.set_text_props(fontweight="bold", fontsize=7)
             cell.set_facecolor("#37474F")
-            cell.set_text_props(color="white", fontweight="bold", fontsize=8)
+            cell.set_text_props(color="white", fontweight="bold", fontsize=7)
         cell.set_edgecolor("#BDBDBD")
 
-    ax.set_title("Classification Results Summary",
+    ax.set_title("Classification Results Summary — NoPrune vs AlwMid vs LongBS (Proposed)",
                  fontsize=13, fontweight="bold", pad=16)
     fig.tight_layout()
     fig.savefig(out, bbox_inches="tight")

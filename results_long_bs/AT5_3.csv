@@ -1,0 +1,2 @@
+bench;k;strategy;num_traces;num_classes;num_covered;time_split;time_class;time_total;num_synth
+AT5;3;long_bs;100;28;27;0.0024;3.2938;3.2962;13
